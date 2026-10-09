@@ -1,0 +1,1555 @@
+{
+  "datasets": [
+    {
+      "name": "ds_active_devices",
+      "displayName": "Active Devices",
+      "queryLines": [
+        "SELECT COUNT(*) as total FROM workspace.scada_cleaned.device_list WHERE status = 'Active'"
+      ]
+    },
+    {
+      "name": "ds_total_readings",
+      "displayName": "Total Readings",
+      "queryLines": [
+        "SELECT COUNT(*) as total FROM workspace.scada_cleaned.sensor_log"
+      ]
+    },
+    {
+      "name": "ds_total_alerts",
+      "displayName": "Total Alerts",
+      "queryLines": [
+        "SELECT COUNT(*) as total FROM workspace.scada_cleaned.alerts"
+      ]
+    },
+    {
+      "name": "ds_top_devices",
+      "displayName": "Top Devices by Readings",
+      "queryLines": [
+        "SELECT d.device_name, COUNT(*) as total_readings FROM workspace.scada_cleaned.sensor_log s JOIN workspace.scada_cleaned.device_list d ON s.imei = d.imei GROUP BY d.device_name ORDER BY total_readings DESC LIMIT 15"
+      ]
+    },
+    {
+      "name": "ds_monthly_volume",
+      "displayName": "Monthly Volume",
+      "queryLines": [
+        "SELECT DATE_TRUNC('month', data_timestamp) as month, COUNT(*) as total_readings, COUNT(DISTINCT imei) as active_devices FROM workspace.scada_cleaned.sensor_log GROUP BY 1 ORDER BY 1"
+      ]
+    },
+    {
+      "name": "ds_alert_type",
+      "displayName": "Alert Distribution",
+      "queryLines": [
+        "SELECT alert_type, COUNT(*) as count FROM workspace.scada_cleaned.alerts GROUP BY alert_type"
+      ]
+    },
+    {
+      "name": "ds_top_alerts",
+      "displayName": "Top Alert Devices",
+      "queryLines": [
+        "SELECT d.device_name, a.alert_type, COUNT(*) as alert_count FROM workspace.scada_cleaned.alerts a JOIN workspace.scada_cleaned.device_list d ON a.uid = d.uid GROUP BY d.device_name, a.alert_type ORDER BY alert_count DESC LIMIT 10"
+      ]
+    },
+    {
+      "name": "ds_daily_alerts",
+      "displayName": "Daily Alert Trend",
+      "queryLines": [
+        "SELECT report_date, alert_type, COUNT(*) as alert_count FROM workspace.scada_cleaned.alerts GROUP BY 1, 2 ORDER BY 1"
+      ]
+    },
+    {
+      "name": "ds_top_consumption",
+      "displayName": "Top Consumption",
+      "queryLines": [
+        "SELECT d.device_name, ROUND(SUM(t.daily_consumption), 2) as total_consumption FROM workspace.scada_cleaned.totalizer t JOIN workspace.scada_cleaned.device_list d ON t.uid = d.uid WHERE t.daily_consumption > 0 AND t.daily_consumption < 1e9 GROUP BY d.device_name ORDER BY total_consumption DESC LIMIT 15"
+      ]
+    },
+    {
+      "name": "ds_stale_devices",
+      "displayName": "Stale Devices",
+      "queryLines": [
+        "WITH last_seen AS (SELECT imei, MAX(data_timestamp) AS last_reading FROM workspace.scada_cleaned.sensor_log GROUP BY imei) SELECT d.device_name, d.location_name, d.site_code, ls.last_reading, DATEDIFF(DAY, ls.last_reading, CURRENT_TIMESTAMP()) AS days_since_last_reading FROM workspace.scada_cleaned.device_list d LEFT JOIN last_seen ls ON d.imei = ls.imei WHERE d.status = 'Active' AND (ls.last_reading IS NULL OR DATEDIFF(DAY, ls.last_reading, CURRENT_TIMESTAMP()) > 7) ORDER BY days_since_last_reading DESC LIMIT 30"
+      ]
+    },
+    {
+      "name": "ds_hourly",
+      "displayName": "Hourly Distribution",
+      "queryLines": [
+        "SELECT HOUR(data_timestamp) as hour_of_day, COUNT(*) as reading_count FROM workspace.scada_cleaned.sensor_log GROUP BY 1 ORDER BY 1"
+      ]
+    },
+    {
+      "name": "ds_site_readings",
+      "displayName": "Readings per Site",
+      "queryLines": [
+        "SELECT d.site_code, COUNT(*) as total_readings FROM workspace.scada_cleaned.sensor_log s JOIN workspace.scada_cleaned.device_list d ON s.imei = d.imei GROUP BY d.site_code ORDER BY total_readings DESC LIMIT 10"
+      ]
+    },
+    {
+      "name": "ds_data_way",
+      "displayName": "Readings by Data Way",
+      "queryLines": [
+        "SELECT\n",
+        "  data_way,\n",
+        "  COUNT(*) as count\n",
+        "FROM\n",
+        "  workspace.scada_cleaned.sensor_log\n",
+        "GROUP BY\n",
+        "  data_way"
+      ]
+    },
+    {
+      "name": "ds_distinct_devices",
+      "displayName": "Distinct Devices Reporting",
+      "queryLines": [
+        "SELECT\n",
+        "  COUNT(DISTINCT imei) as total\n",
+        "FROM\n",
+        "  workspace.scada_cleaned.sensor_log"
+      ]
+    },
+    {
+      "name": "ds_expiring_service",
+      "displayName": "Devices with Expiring Service",
+      "queryLines": [
+        "SELECT\n",
+        "  device_name,\n",
+        "  location_name,\n",
+        "  service_expiry_date,\n",
+        "  DATEDIFF(DAY, CURRENT_DATE(), service_expiry_date) as days_until_expiry\n",
+        "FROM\n",
+        "  workspace.scada_cleaned.device_list\n",
+        "WHERE\n",
+        "  service_expiry_date IS NOT NULL\n",
+        "  AND service_expiry_date <= DATE_ADD(CURRENT_DATE(), 90)\n",
+        "ORDER BY\n",
+        "  service_expiry_date\n",
+        "LIMIT 20"
+      ]
+    },
+    {
+      "name": "ds_avg_consumption",
+      "displayName": "Avg Daily Consumption",
+      "queryLines": [
+        "SELECT\n",
+        "  ROUND(AVG(daily_consumption), 2) as avg_daily\n",
+        "FROM\n",
+        "  workspace.scada_cleaned.totalizer\n",
+        "WHERE\n",
+        "  daily_consumption > 0\n",
+        "  AND daily_consumption < 1e9"
+      ]
+    },
+    {
+      "name": "ds_app_type",
+      "displayName": "Readings by Application Type",
+      "queryLines": [
+        "SELECT\n",
+        "  application_type,\n",
+        "  COUNT(*) as device_count\n",
+        "FROM\n",
+        "  workspace.scada_cleaned.device_list\n",
+        "WHERE\n",
+        "  application_type IS NOT NULL\n",
+        "GROUP BY\n",
+        "  application_type\n",
+        "ORDER BY\n",
+        "  device_count DESC"
+      ]
+    },
+    {
+      "name": "ds_monthly_consumption",
+      "displayName": "Monthly Consumption Trend",
+      "queryLines": [
+        "SELECT\n",
+        "  DATE_TRUNC('month', report_date) as month,\n",
+        "  parameter_name,\n",
+        "  ROUND(SUM(daily_consumption), 2) as total_consumption\n",
+        "FROM\n",
+        "  workspace.scada_cleaned.totalizer\n",
+        "WHERE\n",
+        "  daily_consumption > 0\n",
+        "  AND daily_consumption < 1e9\n",
+        "GROUP BY\n",
+        "  1,\n",
+        "  2\n",
+        "ORDER BY\n",
+        "  1"
+      ]
+    },
+    {
+      "name": "ds_avg_flow",
+      "displayName": "Top Devices by Avg Flow",
+      "queryLines": [
+        "SELECT\n",
+        "  d.device_name,\n",
+        "  ROUND(AVG(s.p1), 3) as avg_flow\n",
+        "FROM\n",
+        "  workspace.scada_cleaned.sensor_log s\n",
+        "    JOIN workspace.scada_cleaned.device_list d\n",
+        "      ON s.imei = d.imei\n",
+        "WHERE\n",
+        "  s.p1 > 0\n",
+        "  AND s.p1 < 10000\n",
+        "GROUP BY\n",
+        "  d.device_name\n",
+        "ORDER BY\n",
+        "  avg_flow DESC\n",
+        "LIMIT 10"
+      ]
+    },
+    {
+      "name": "ds_device_status",
+      "displayName": "Device Status Distribution",
+      "queryLines": [
+        "SELECT\n",
+        "  status,\n",
+        "  COUNT(*) as device_count\n",
+        "FROM\n",
+        "  workspace.scada_cleaned.device_list\n",
+        "GROUP BY\n",
+        "  status"
+      ]
+    },
+    {
+      "name": "ds_filter_sites",
+      "displayName": "Filter - Site Codes",
+      "queryLines": [
+        "SELECT DISTINCT\n",
+        "  site_code\n",
+        "FROM\n",
+        "  workspace.scada_cleaned.device_list\n",
+        "WHERE\n",
+        "  site_code IS NOT NULL\n",
+        "ORDER BY\n",
+        "  site_code"
+      ]
+    },
+    {
+      "name": "ds_filter_status",
+      "displayName": "Filter - Device Status",
+      "queryLines": [
+        "SELECT DISTINCT\n",
+        "  status\n",
+        "FROM\n",
+        "  workspace.scada_cleaned.device_list\n",
+        "ORDER BY\n",
+        "  status"
+      ]
+    },
+    {
+      "name": "ds_filter_alert_type",
+      "displayName": "Filter - Alert Types",
+      "queryLines": [
+        "SELECT DISTINCT\n",
+        "  alert_type\n",
+        "FROM\n",
+        "  workspace.scada_cleaned.alerts\n",
+        "ORDER BY\n",
+        "  alert_type"
+      ]
+    }
+  ],
+  "relationshipGraphs": [
+    {
+      "sources": [
+        {
+          "name": "Active_Devices",
+          "datasetName": "ds_active_devices"
+        },
+        {
+          "name": "Total_Readings",
+          "datasetName": "ds_total_readings"
+        },
+        {
+          "name": "Top_Devices_by_Readings",
+          "datasetName": "ds_top_devices"
+        },
+        {
+          "name": "Total_Alerts",
+          "datasetName": "ds_total_alerts"
+        },
+        {
+          "name": "Alert_Distribution",
+          "datasetName": "ds_alert_type"
+        },
+        {
+          "name": "Monthly_Volume",
+          "datasetName": "ds_monthly_volume"
+        },
+        {
+          "name": "Top_Alert_Devices",
+          "datasetName": "ds_top_alerts"
+        },
+        {
+          "name": "Top_Consumption",
+          "datasetName": "ds_top_consumption"
+        },
+        {
+          "name": "Daily_Alert_Trend",
+          "datasetName": "ds_daily_alerts"
+        },
+        {
+          "name": "Stale_Devices",
+          "datasetName": "ds_stale_devices"
+        },
+        {
+          "name": "Hourly_Distribution",
+          "datasetName": "ds_hourly"
+        },
+        {
+          "name": "Readings_per_Site",
+          "datasetName": "ds_site_readings"
+        },
+        {
+          "name": "Readings_by_Data_Way",
+          "datasetName": "ds_data_way"
+        },
+        {
+          "name": "Distinct_Devices_Reporting",
+          "datasetName": "ds_distinct_devices"
+        },
+        {
+          "name": "Devices_with_Expiring_Service",
+          "datasetName": "ds_expiring_service"
+        },
+        {
+          "name": "Avg_Daily_Consumption",
+          "datasetName": "ds_avg_consumption"
+        },
+        {
+          "name": "Readings_by_Application_Type",
+          "datasetName": "ds_app_type"
+        },
+        {
+          "name": "Monthly_Consumption_Trend",
+          "datasetName": "ds_monthly_consumption"
+        },
+        {
+          "name": "Top_Devices_by_Avg_Flow",
+          "datasetName": "ds_avg_flow"
+        },
+        {
+          "name": "Device_Status_Distribution",
+          "datasetName": "ds_device_status"
+        },
+        {
+          "name": "Filter__Site_Codes",
+          "datasetName": "ds_filter_sites"
+        },
+        {
+          "name": "Filter__Device_Status",
+          "datasetName": "ds_filter_status"
+        },
+        {
+          "name": "Filter__Alert_Types",
+          "datasetName": "ds_filter_alert_type"
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "overview",
+      "displayName": "Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "w_active_devices",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_active_devices",
+                  "fields": [
+                    {
+                      "name": "total",
+                      "expression": "`total`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Active Devices"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "w_total_readings",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_total_readings",
+                  "fields": [
+                    {
+                      "name": "total",
+                      "expression": "`total`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Total Sensor Readings"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 3,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "w_total_alerts",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_total_alerts",
+                  "fields": [
+                    {
+                      "name": "total",
+                      "expression": "`total`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Total Alerts"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 3,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "w_top_devices",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_top_devices",
+                  "fields": [
+                    {
+                      "name": "device_name",
+                      "expression": "`device_name`"
+                    },
+                    {
+                      "name": "total_readings",
+                      "expression": "`total_readings`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "device_name",
+                  "displayName": "Device",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "total_readings",
+                  "displayName": "Total Readings",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "w_monthly_volume",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_monthly_volume",
+                  "fields": [
+                    {
+                      "name": "month",
+                      "expression": "`month`"
+                    },
+                    {
+                      "name": "total_readings",
+                      "expression": "`total_readings`"
+                    },
+                    {
+                      "name": "active_devices",
+                      "expression": "`active_devices`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "month",
+                  "displayName": "Month",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "total_readings",
+                  "displayName": "Total Readings",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 12,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "w_data_way_pie",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "fields": [
+                    {
+                      "name": "Readings_by_Data_Way__count",
+                      "expression": "`Readings_by_Data_Way`.`count`"
+                    },
+                    {
+                      "name": "Readings_by_Data_Way__data_way",
+                      "expression": "`Readings_by_Data_Way`.`data_way`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Readings by Data Way"
+              },
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "Readings_by_Data_Way__count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "Readings_by_Data_Way__data_way",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 17,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "w_distinct_counter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "fields": [
+                    {
+                      "name": "Distinct_Devices_Reporting__total",
+                      "expression": "`Distinct_Devices_Reporting`.`total`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Distinct Devices Reporting",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "Distinct_Devices_Reporting__total"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 17,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "w_header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# SCADA Flow Monitoring Dashboard\n",
+                "**Powered by mcom technology** — Real-time SCADA flow data analytics and device health monitoring"
+              ]
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 9,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "w_copyright",
+            "multilineTextboxSpec": {
+              "lines": [
+                "---\n",
+                "*© 2026 mcom technology. All rights reserved. This dashboard and its contents are proprietary to mcom technology. Unauthorized reproduction or distribution is prohibited.*"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 22,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "8f97ca00",
+            "imageSpec": {
+              "image": {
+                "source": {
+                  "url": "data:image/png;base64,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"
+                }
+              },
+              "frame": {},
+              "style": {}
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 3
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "alerts_consumption",
+      "displayName": "Alerts & Consumption",
+      "layout": [
+        {
+          "widget": {
+            "name": "w_alert_pie",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_alert_type",
+                  "fields": [
+                    {
+                      "name": "alert_type",
+                      "expression": "`alert_type`"
+                    },
+                    {
+                      "name": "count",
+                      "expression": "`count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "count",
+                  "displayName": "Count"
+                },
+                "color": {
+                  "fieldName": "alert_type",
+                  "displayName": "Alert Type",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 4,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "w_top_alerts",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_top_alerts",
+                  "fields": [
+                    {
+                      "name": "device_name",
+                      "expression": "`device_name`"
+                    },
+                    {
+                      "name": "alert_type",
+                      "expression": "`alert_type`"
+                    },
+                    {
+                      "name": "alert_count",
+                      "expression": "`alert_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "device_name",
+                  "displayName": "Device",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "alert_count",
+                  "displayName": "Alert Count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "alert_type",
+                  "displayName": "Alert Type",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 0,
+            "width": 8,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "w_daily_alerts",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_daily_alerts",
+                  "fields": [
+                    {
+                      "name": "report_date",
+                      "expression": "`report_date`"
+                    },
+                    {
+                      "name": "alert_type",
+                      "expression": "`alert_type`"
+                    },
+                    {
+                      "name": "alert_count",
+                      "expression": "`alert_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "report_date",
+                  "displayName": "Date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "alert_count",
+                  "displayName": "Alert Count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "alert_type",
+                  "displayName": "Alert Type",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 12,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "w_top_consumption",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_top_consumption",
+                  "fields": [
+                    {
+                      "name": "device_name",
+                      "expression": "`device_name`"
+                    },
+                    {
+                      "name": "total_consumption",
+                      "expression": "`total_consumption`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "device_name",
+                  "displayName": "Device",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "total_consumption",
+                  "displayName": "Total Consumption",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "w_monthly_consumption",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_monthly_consumption",
+                  "fields": [
+                    {
+                      "name": "parameter_name",
+                      "expression": "`parameter_name`"
+                    },
+                    {
+                      "name": "month",
+                      "expression": "`month`"
+                    },
+                    {
+                      "name": "sum(total_consumption)",
+                      "expression": "SUM(`total_consumption`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Monthly Consumption Trend"
+              },
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "month",
+                  "displayName": "month",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_consumption)",
+                  "displayName": "total_consumption",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "parameter_name",
+                  "displayName": "parameter_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 16,
+            "width": 8,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "w_avg_counter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "fields": [
+                    {
+                      "name": "Avg_Daily_Consumption__avg_daily",
+                      "expression": "`Avg_Daily_Consumption`.`avg_daily`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Daily Consumption"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "Avg_Daily_Consumption__avg_daily"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 22,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "w_copyright_ac",
+            "multilineTextboxSpec": {
+              "lines": [
+                "---\n",
+                "*© 2026 mcom technology. All rights reserved. This dashboard and its contents are proprietary to mcom technology. Unauthorized reproduction or distribution is prohibited.*"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 28,
+            "width": 12,
+            "height": 2
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "device_health",
+      "displayName": "Device Health",
+      "layout": [
+        {
+          "widget": {
+            "name": "w_stale_devices",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_stale_devices",
+                  "fields": [
+                    {
+                      "name": "device_name",
+                      "expression": "`device_name`"
+                    },
+                    {
+                      "name": "location_name",
+                      "expression": "`location_name`"
+                    },
+                    {
+                      "name": "site_code",
+                      "expression": "`site_code`"
+                    },
+                    {
+                      "name": "last_reading",
+                      "expression": "`last_reading`"
+                    },
+                    {
+                      "name": "days_since_last_reading",
+                      "expression": "`days_since_last_reading`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Stale Active Devices"
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "device_name"
+                  },
+                  {
+                    "fieldName": "location_name"
+                  },
+                  {
+                    "fieldName": "site_code"
+                  },
+                  {
+                    "fieldName": "last_reading"
+                  },
+                  {
+                    "fieldName": "days_since_last_reading"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "w_hourly",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_hourly",
+                  "fields": [
+                    {
+                      "name": "hour_of_day",
+                      "expression": "`hour_of_day`"
+                    },
+                    {
+                      "name": "reading_count",
+                      "expression": "`reading_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "hour_of_day",
+                  "displayName": "Hour of Day",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "reading_count",
+                  "displayName": "Reading Count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "w_site_readings",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_site_readings",
+                  "fields": [
+                    {
+                      "name": "site_code",
+                      "expression": "`site_code`"
+                    },
+                    {
+                      "name": "total_readings",
+                      "expression": "`total_readings`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "site_code",
+                  "displayName": "Site Code",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "total_readings",
+                  "displayName": "Total Readings",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 8,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "w_device_status",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_device_status",
+                  "fields": [
+                    {
+                      "name": "status",
+                      "expression": "`status`"
+                    },
+                    {
+                      "name": "sum(device_count)",
+                      "expression": "SUM(`device_count`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Active vs Deactive Devices"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "status",
+                  "displayName": "status",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(device_count)",
+                  "displayName": "device_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "status",
+                  "displayName": "status",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 13,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "w_expiring_service",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_expiring_service",
+                  "fields": [
+                    {
+                      "name": "device_name",
+                      "expression": "`device_name`"
+                    },
+                    {
+                      "name": "location_name",
+                      "expression": "`location_name`"
+                    },
+                    {
+                      "name": "service_expiry_date",
+                      "expression": "`service_expiry_date`"
+                    },
+                    {
+                      "name": "days_until_expiry",
+                      "expression": "`days_until_expiry`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Devices with Expiring Service"
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "device_name"
+                  },
+                  {
+                    "fieldName": "location_name"
+                  },
+                  {
+                    "fieldName": "service_expiry_date"
+                  },
+                  {
+                    "fieldName": "days_until_expiry"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 13,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "w_avg_flow",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_avg_flow",
+                  "fields": [
+                    {
+                      "name": "device_name",
+                      "expression": "`device_name`"
+                    },
+                    {
+                      "name": "sum(avg_flow)",
+                      "expression": "SUM(`avg_flow`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Top 10 Devices by Avg Flow Rate"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "device_name",
+                  "displayName": "device_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(avg_flow)",
+                  "displayName": "avg_flow",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "device_name",
+                  "displayName": "device_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 18,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "w_app_type",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_app_type",
+                  "fields": [
+                    {
+                      "name": "application_type",
+                      "expression": "`application_type`"
+                    },
+                    {
+                      "name": "sum(device_count)",
+                      "expression": "SUM(`device_count`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Devices by Application Type"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "application_type",
+                  "displayName": "application_type",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(device_count)",
+                  "displayName": "device_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "application_type",
+                  "displayName": "application_type",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 18,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "w_copyright_dh",
+            "multilineTextboxSpec": {
+              "lines": [
+                "---\n",
+                "*© 2026 mcom technology. All rights reserved. This dashboard and its contents are proprietary to mcom technology. Unauthorized reproduction or distribution is prohibited.*"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 23,
+            "width": 12,
+            "height": 2
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
