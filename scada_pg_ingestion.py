@@ -155,17 +155,36 @@ def init_database():
         created_at      TIMESTAMP DEFAULT NOW()
     );
 
-    -- Raw data strings (append-only log)
-    CREATE TABLE IF NOT EXISTS tb_row_data (
+    -- Structured log data (append-only, one row per IMEI per cycle)
+    CREATE TABLE IF NOT EXISTS tb_logedata (
         id              BIGSERIAL PRIMARY KEY,
-        imei_number     VARCHAR(20) NOT NULL,
-        raw_data        TEXT NOT NULL,
+        imei            VARCHAR(20) NOT NULL,
+        way             VARCHAR(5),
+        data_stamp      TIMESTAMP,
+        p1  NUMERIC(14,2) DEFAULT 0, p2  NUMERIC(14,2) DEFAULT 0,
+        p3  NUMERIC(14,2) DEFAULT 0, p4  NUMERIC(14,2) DEFAULT 0,
+        p5  NUMERIC(14,2) DEFAULT 0, p6  NUMERIC(14,2) DEFAULT 0,
+        p7  NUMERIC(14,2) DEFAULT 0, p8  NUMERIC(14,2) DEFAULT 0,
+        p9  NUMERIC(14,2) DEFAULT 0, p10 NUMERIC(14,2) DEFAULT 0,
+        p11 NUMERIC(14,2) DEFAULT 0, p12 NUMERIC(14,2) DEFAULT 0,
+        p13 NUMERIC(14,2) DEFAULT 0, p14 NUMERIC(14,2) DEFAULT 0,
+        p15 NUMERIC(14,2) DEFAULT 0, p16 NUMERIC(14,2) DEFAULT 0,
+        p17 NUMERIC(14,2) DEFAULT 0, p18 NUMERIC(14,2) DEFAULT 0,
+        p19 NUMERIC(14,2) DEFAULT 0, p20 NUMERIC(14,2) DEFAULT 0,
+        p21 NUMERIC(14,2) DEFAULT 0, p22 NUMERIC(14,2) DEFAULT 0,
+        p23 NUMERIC(14,2) DEFAULT 0, p24 NUMERIC(14,2) DEFAULT 0,
+        p25 NUMERIC(14,2) DEFAULT 0, p26 NUMERIC(14,2) DEFAULT 0,
+        p27 NUMERIC(14,2) DEFAULT 0, p28 NUMERIC(14,2) DEFAULT 0,
+        p29 NUMERIC(14,2) DEFAULT 0, p30 NUMERIC(14,2) DEFAULT 0,
+        csq             VARCHAR(10),
+        update_status   VARCHAR(10) DEFAULT 'NEW',
         server_dt       TIMESTAMP NOT NULL,
         server_d        DATE NOT NULL,
         url_name        VARCHAR(50) DEFAULT 'scada_pg_ingestion.py'
     );
-    CREATE INDEX IF NOT EXISTS idx_row_data_imei ON tb_row_data (imei_number);
-    CREATE INDEX IF NOT EXISTS idx_row_data_dt ON tb_row_data (server_dt);
+    CREATE INDEX IF NOT EXISTS idx_logedata_imei ON tb_logedata (imei);
+    CREATE INDEX IF NOT EXISTS idx_logedata_dt ON tb_logedata (server_dt);
+    CREATE INDEX IF NOT EXISTS idx_logedata_datastamp ON tb_logedata (data_stamp);
 
     -- Live data (one row per IMEI, upserted)
     CREATE TABLE IF NOT EXISTS tb_livedata (
@@ -750,9 +769,49 @@ def push_to_databricks(run_stats: dict, live_data: list):
                     f"INSERT INTO {schema}.device_livedata ({columns}) VALUES " + ",\n".join(values_sql)
                 )
         
+        # ── Append to device_logedata (historical log, NOT truncated) ──
+        cursor.execute(f"""
+            CREATE TABLE IF NOT EXISTS {schema}.device_logedata (
+                imei STRING, way STRING, data_stamp TIMESTAMP, csq STRING,
+                p1 DOUBLE, p2 DOUBLE, p3 DOUBLE, p4 DOUBLE, p5 DOUBLE,
+                p6 DOUBLE, p7 DOUBLE, p8 DOUBLE, p9 DOUBLE, p10 DOUBLE,
+                p11 DOUBLE, p12 DOUBLE, p13 DOUBLE, p14 DOUBLE, p15 DOUBLE,
+                p16 DOUBLE, p17 DOUBLE, p18 DOUBLE, p19 DOUBLE, p20 DOUBLE,
+                p21 DOUBLE, p22 DOUBLE, p23 DOUBLE, p24 DOUBLE, p25 DOUBLE,
+                p26 DOUBLE, p27 DOUBLE, p28 DOUBLE, p29 DOUBLE, p30 DOUBLE,
+                server_dt TIMESTAMP, server_d DATE
+            )
+        """)
+        if live_data:
+            log_columns = (
+                "imei, way, data_stamp, csq, "
+                "p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, "
+                "p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, "
+                "p21, p22, p23, p24, p25, p26, p27, p28, p29, p30, "
+                "server_dt, server_d"
+            )
+            now_ts = datetime.now()
+            today_d = now_ts.date()
+            for batch in _chunked(live_data, batch_size):
+                values_sql = []
+                for d in batch:
+                    row_values = [
+                        _dbx_sql_literal(d.get("imei")),
+                        _dbx_sql_literal(d.get("way")),
+                        _dbx_sql_literal(d.get("data_stamp")),
+                        _dbx_sql_literal(d.get("csq")),
+                    ]
+                    row_values.extend(_dbx_sql_literal(d.get(f"p{i}", 0)) for i in range(1, 31))
+                    row_values.append(_dbx_sql_literal(now_ts))
+                    row_values.append(f"DATE '{today_d}'")
+                    values_sql.append(f"({', '.join(row_values)})")
+                cursor.execute(
+                    f"INSERT INTO {schema}.device_logedata ({log_columns}) VALUES " + ",\n".join(values_sql)
+                )
+        
         cursor.close()
         conn.close()
-        logger.info(f"Pushed stats to Databricks: {schema}.ingestion_runs + device_livedata")
+        logger.info(f"Pushed stats to Databricks: {schema}.ingestion_runs + device_livedata + device_logedata")
         
     except ImportError:
         logger.warning("databricks-sql-connector not installed. Skipping Databricks push.")
@@ -762,13 +821,24 @@ def push_to_databricks(run_stats: dict, live_data: list):
 
 # ─── Database Insert/Upsert ──────────────────────────────────────────────────
 
-def batch_insert_raw(conn, records: list):
-    """Batch insert into tb_row_data."""
+def batch_insert_logedata(conn, records: list):
+    """Batch insert structured records into tb_logedata (append-only log)."""
     if not records:
         return
     sql = """
-        INSERT INTO tb_row_data (imei_number, raw_data, server_dt, server_d, url_name)
-        VALUES (%s, %s, %s, %s, 'scada_pg_ingestion.py')
+        INSERT INTO tb_logedata (
+            imei, way, data_stamp,
+            p1,p2,p3,p4,p5,p6,p7,p8,p9,p10,
+            p11,p12,p13,p14,p15,p16,p17,p18,p19,p20,
+            p21,p22,p23,p24,p25,p26,p27,p28,p29,p30,
+            csq, update_status, server_dt, server_d, url_name
+        ) VALUES (
+            %s, %s, %s,
+            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+            %s, 'NEW', %s, %s, 'scada_pg_ingestion.py'
+        )
     """
     with conn.cursor() as cur:
         psycopg2.extras.execute_batch(cur, sql, records, page_size=100)
@@ -849,22 +919,22 @@ def run_ingestion_cycle():
         # Prepare batch records for PostgreSQL
         now = datetime.now()
         today = now.date()
-        raw_records = []
+        log_records = []
         live_records = []
         error_count = 0
         
         for imei, parsed in results.items():
             try:
-                # Build raw data string for tb_row_data
-                p_str = "|".join(str(parsed.get(f"p{i}", 0)) for i in range(1, 31))
-                raw_data = f"{parsed['imei']}|{parsed['way']}|{parsed['data_stamp']}|{parsed['csq']}|{p_str}"
+                p_values = tuple(parsed[f"p{i}"] for i in range(1, 31))
                 
-                raw_records.append((
-                    parsed["imei"], raw_data, now, today
+                # Structured log record for tb_logedata (append-only history)
+                log_records.append((
+                    parsed["imei"], parsed["way"], parsed["data_stamp"],
+                    *p_values,
+                    parsed["csq"], now, today
                 ))
                 
-                # Live data record
-                p_values = tuple(parsed[f"p{i}"] for i in range(1, 31))
+                # Live data record for tb_livedata (upsert on IMEI)
                 live_records.append((
                     parsed["imei"], parsed["way"], parsed["data_stamp"],
                     *p_values,
@@ -876,8 +946,8 @@ def run_ingestion_cycle():
                 logger.error(f"Error processing IMEI {imei}: {e}")
         
         # Batch write to PostgreSQL
-        if raw_records:
-            batch_insert_raw(pg_conn, raw_records)
+        if log_records:
+            batch_insert_logedata(pg_conn, log_records)
         if live_records:
             batch_upsert_livedata(pg_conn, live_records)
         pg_conn.commit()
@@ -929,9 +999,9 @@ def show_health():
             cur.execute("SELECT COUNT(*) FROM tb_active_devices WHERE status = 'Active'")
             active = cur.fetchone()[0]
             
-            # Total raw records
-            cur.execute("SELECT COUNT(*) FROM tb_row_data")
-            raw_count = cur.fetchone()[0]
+            # Total log records
+            cur.execute("SELECT COUNT(*) FROM tb_logedata")
+            log_count = cur.fetchone()[0]
             
             # Live data count
             cur.execute("SELECT COUNT(*) FROM tb_livedata")
@@ -957,7 +1027,7 @@ def show_health():
         print("  SCADA Flow Ingestion - Health Check")
         print("=" * 60)
         print(f"  Active Devices:    {active}")
-        print(f"  Raw Data Records:  {raw_count}")
+        print(f"  Log Data Records:  {log_count}")
         print(f"  Live Data Records: {live_count}")
         print(f"  Stale (>30 min):   {stale}")
         print("\n  Last 5 Ingestion Runs:")

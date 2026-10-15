@@ -127,3 +127,56 @@ if df_trend.count() > 0:
 else:
     print("No completed runs yet. Run the ingestion script with Databricks push enabled.")
     print("Set DBX_PUSH_ENABLED = True and configure your token in scada_pg_ingestion.py")
+
+# COMMAND ----------
+
+# DBTITLE 1,Historical Log Data (device_logedata)
+# Historical log data — appended every cycle (NOT overwritten like device_livedata)
+df_log = spark.table(f"{MONITOR_SCHEMA}.device_logedata")
+print(f"Total historical log records: {df_log.count()}")
+print(f"Unique devices in log: {df_log.select('imei').distinct().count()}")
+df_log.orderBy("server_dt", ascending=False).select(
+    "imei", "way", "data_stamp", "p1", "p2", "p3", "csq", "server_dt", "server_d"
+).limit(20).display()
+
+# COMMAND ----------
+
+# DBTITLE 1,Log Records Per Cycle (Growth Over Time)
+from pyspark.sql.functions import count, countDistinct, to_timestamp, date_format
+
+# Records per ingestion cycle — shows how the log grows over time
+df_log_cycles = df_log.groupBy("server_dt").agg(
+    count("*").alias("records"),
+    countDistinct("imei").alias("unique_devices")
+).orderBy("server_dt", ascending=False)
+
+print(f"Total ingestion cycles in log: {df_log_cycles.count()}")
+df_log_cycles.limit(20).display()
+
+# COMMAND ----------
+
+# DBTITLE 1,Daily Log Volume Trend
+from pyspark.sql.functions import sum as spark_sum
+
+# Daily volume — how many log records per day
+df_daily = df_log.groupBy("server_d").agg(
+    count("*").alias("total_records"),
+    countDistinct("imei").alias("unique_devices"),
+    countDistinct("server_dt").alias("cycles")
+).orderBy("server_d", ascending=False)
+
+print("Daily log volume:")
+df_daily.limit(14).display()
+
+# COMMAND ----------
+
+# DBTITLE 1,Top Active Devices (Most Log Entries)
+# Which devices have the most historical readings?
+df_top_devices = df_log.groupBy("imei").agg(
+    count("*").alias("total_readings"),
+    spark_max("data_stamp").alias("latest_stamp"),
+    spark_min("data_stamp").alias("earliest_stamp"),
+).orderBy("total_readings", ascending=False)
+
+print(f"Devices with log data: {df_top_devices.count()}")
+df_top_devices.limit(20).display()
