@@ -228,6 +228,18 @@ def init_database():
         duration_sec    NUMERIC(10,2),
         status          VARCHAR(20) DEFAULT 'RUNNING'
     );
+
+    -- Device parameter mappings (P1-P30 → meaningful names per IMEI)
+    CREATE TABLE IF NOT EXISTS tb_device_parameters (
+        imei            VARCHAR(20) NOT NULL,
+        mapping_code    VARCHAR(5) NOT NULL,
+        parameter_name  VARCHAR(200),
+        unit            VARCHAR(50),
+        low_threshold   DOUBLE PRECISION,
+        high_threshold  DOUBLE PRECISION,
+        PRIMARY KEY (imei, mapping_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_devparams_imei ON tb_device_parameters (imei);
     """
     conn = get_pg_connection()
     try:
@@ -354,6 +366,69 @@ def seed_active_devices():
         logger.info(f"Seeded {len(ACTIVE_IMEIS)} active IMEI numbers into tb_active_devices.")
     finally:
         conn.close()
+
+
+def sync_device_parameters():
+    """Sync device parameter mappings from Databricks (scada_cleaned.device_parameters)
+    into PostgreSQL tb_device_parameters. This tells us what P1-P30 mean per device.
+    Requires DATABRICKS_TOKEN to be set."""
+    token = DBX_CONFIG.get("token") or os.environ.get("DATABRICKS_TOKEN", "")
+    if not token:
+        logger.warning("Parameter sync skipped: no Databricks token configured.")
+        return
+    
+    try:
+        from databricks import sql as dbx_sql
+        
+        # Fetch parameter mappings from Databricks
+        dbx_conn = dbx_sql.connect(
+            server_hostname=DBX_CONFIG["host"],
+            http_path=DBX_CONFIG["http_path"],
+            access_token=token,
+        )
+        dbx_cursor = dbx_conn.cursor()
+        dbx_cursor.execute("""
+            SELECT imei, mapping_code, parameter_name, unit,
+                   low_threshold, high_threshold
+            FROM workspace.scada_cleaned.device_parameters
+            WHERE status = 'Active'
+              AND parameter_name NOT LIKE 'Parameter %%'
+              AND LENGTH(imei) <= 20
+        """)
+        rows = dbx_cursor.fetchall()
+        dbx_cursor.close()
+        dbx_conn.close()
+        
+        if not rows:
+            logger.warning("No parameter mappings found in Databricks.")
+            return
+        
+        logger.info(f"Fetched {len(rows)} parameter mappings from Databricks.")
+        
+        # Upsert into PostgreSQL
+        pg_conn = get_pg_connection()
+        try:
+            sql = """
+                INSERT INTO tb_device_parameters
+                    (imei, mapping_code, parameter_name, unit, low_threshold, high_threshold)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (imei, mapping_code) DO UPDATE SET
+                    parameter_name = EXCLUDED.parameter_name,
+                    unit = EXCLUDED.unit,
+                    low_threshold = EXCLUDED.low_threshold,
+                    high_threshold = EXCLUDED.high_threshold
+            """
+            with pg_conn.cursor() as cur:
+                psycopg2.extras.execute_batch(cur, sql, rows, page_size=200)
+            pg_conn.commit()
+            logger.info(f"Synced {len(rows)} parameter mappings to PostgreSQL tb_device_parameters.")
+        finally:
+            pg_conn.close()
+    
+    except ImportError:
+        logger.warning("databricks-sql-connector not installed. Skipping parameter sync.")
+    except Exception as e:
+        logger.warning(f"Parameter sync failed (non-critical): {e}")
 
 
 # ─── Data Parsing (mirrors gamma.php logic) ──────────────────────────────────
@@ -1149,6 +1224,8 @@ def main():
                         help="Test single IMEI with full debug output")
     parser.add_argument("--scan", action="store_true",
                         help="Scan all IMEIs to find which ones have live data")
+    parser.add_argument("--sync-params", action="store_true",
+                        help="Sync device parameter mappings (P1-P30 names) from Databricks")
     parser.add_argument("--interval", type=int, default=POLL_INTERVAL_SECONDS,
                         help=f"Poll interval in seconds (default: {POLL_INTERVAL_SECONDS})")
     args = parser.parse_args()
@@ -1157,7 +1234,14 @@ def main():
         logger.info("Initializing database...")
         init_database()
         seed_active_devices()
+        sync_device_parameters()
         logger.info("Done. You can now run the ingestion.")
+        return
+    
+    if args.sync_params:
+        logger.info("Syncing device parameter mappings from Databricks...")
+        init_database()  # Ensure tb_device_parameters table exists
+        sync_device_parameters()
         return
     
     if args.health:
